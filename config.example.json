@@ -1,0 +1,17 @@
+{
+    "coinbaseAddress": "YOUR_MYNTA_ADDRESS_HERE",
+    "blockBrand": "Mynta Solo Miner",
+    "host": "0.0.0.0",
+    "port": {
+        "number": 3333,
+        "diff": 1
+    },
+    "rpc": {
+        "host": "127.0.0.1",
+        "port": 8766,
+        "user": "myntarpc",
+        "password": "YOUR_RPC_PASSWORD_HERE"
+    },
+    "jobUpdateInterval": 55,
+    "blockPollIntervalMs": 250
+}

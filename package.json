@@ -1,0 +1,50 @@
+{
+  "name": "mynta-stratum",
+  "version": "1.0.0",
+  "description": "KAWPoW Stratum Proxy for Mynta Solo Mining",
+  "main": "start.js",
+  "bin": "start.js",
+  "author": "Mynta Core Developers",
+  "license": "MIT",
+  "pkg": {
+    "targets": ["node22-win-x64"],
+    "assets": [
+      "libs/**/*",
+      "node_modules/**/*.node",
+      "node_modules/@mintpond/hasher-kawpow/**/*"
+    ]
+  },
+  "scripts": {
+    "start": "node start.js",
+    "build": "pkg . --targets node22-win-x64 --output mynta-stratum.exe"
+  },
+  "dependencies": {
+    "@mintpond/hasher-kawpow": "git+https://github.com/LabyrinthCore/kawpow-hasher",
+    "@mintpond/mint-bitcoin-script": "git+https://github.com/MintPond/mint-bitcoin-script",
+    "@mintpond/mint-merkle": "git+https://github.com/MintPond/mint-merkle",
+    "@mintpond/mint-precon": "git+https://github.com/MintPond/mint-precon",
+    "@mintpond/mint-socket": "git+https://github.com/MintPond/mint-socket",
+    "@mintpond/mint-utils": "git+https://github.com/MintPond/mint-utils",
+    "@mintpond/mint-bos": "git+https://github.com/MintPond/mint-bos",
+    "sha3": "2.1.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MyntaProject/mynta-stratum.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MyntaProject/mynta-stratum/issues"
+  },
+  "homepage": "https://github.com/MyntaProject/mynta-stratum#readme",
+  "keywords": [
+    "mynta",
+    "kawpow",
+    "stratum",
+    "mining",
+    "solo-mining",
+    "cryptocurrency"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
