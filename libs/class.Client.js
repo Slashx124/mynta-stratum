@@ -56,6 +56,7 @@ class Client extends EventEmitter {
         _._isSubscribed = false;
         _._isAuthorized = false;
         _._disconnectReason = '';
+        _._lastActivity = mu.now(); // Initialize to connection time
 
         _._socket.on(TcpSocket.EVENT_MESSAGE_IN, _._onSocketMessageIn.bind(_));
         _._socket.on(TcpSocket.EVENT_MALFORMED_MESSAGE, _._onMalformedMessage.bind(_));

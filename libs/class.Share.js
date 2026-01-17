@@ -257,12 +257,27 @@ class Share {
         if (_._isHeaderMismatched(headerHashBuf, _._headerHashBuf))
             return false;
 
-        const isValid = algorithm.verify(
-            /* header hash */ headerHashBuf,
-            /* nonce       */ _._nonceBuf,
-            /* height      */ _._job.height,
-            /* mix hash    */ _._mixHashBuf,
-            /* hash output */ HASH_OUT_BUFFER);
+        // Wrap native module call in try/catch - it can throw on malformed input
+        let isValid;
+        try {
+            isValid = algorithm.verify(
+                /* header hash */ headerHashBuf,
+                /* nonce       */ _._nonceBuf,
+                /* height      */ _._job.height,
+                /* mix hash    */ _._mixHashBuf,
+                /* hash output */ HASH_OUT_BUFFER);
+        } catch (err) {
+            // Log the error for debugging but don't crash
+            const logger = global.stratumLogger;
+            if (logger) {
+                logger.error('Native hasher threw exception during share validation:', err.message || err);
+                logger.debug('Share data - nonce:', _._nonceBuf.toString('hex'), 
+                           'headerHash:', headerHashBuf.toString('hex'),
+                           'mixHash:', _._mixHashBuf.toString('hex'),
+                           'height:', _._job.height);
+            }
+            return _._setError(StratumError.PROGPOW_VERIFY_FAILED);
+        }
 
         if (!isValid)
             return _._setError(StratumError.PROGPOW_VERIFY_FAILED);
@@ -277,7 +292,12 @@ class Share {
             _._blockHex = _._serializeBlock().toString('hex');
             _._blockId = HASH_OUT_BUFFER.toString('hex');
 
-            console.log(`Winning nonce submitted: ${_._blockId}`);
+            const logger = global.stratumLogger;
+            if (logger) {
+                logger.info(`*** WINNING NONCE FOUND! Block ID: ${_._blockId} ***`);
+            } else {
+                console.log(`Winning nonce submitted: ${_._blockId}`);
+            }
         }
 
         // check low difficulty

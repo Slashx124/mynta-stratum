@@ -10,8 +10,15 @@
         "host": "127.0.0.1",
         "port": 8766,
         "user": "myntarpc",
-        "password": "YOUR_RPC_PASSWORD_HERE"
+        "password": "YOUR_RPC_PASSWORD_HERE",
+        "timeout": 30000,
+        "retryAttempts": 3,
+        "retryDelay": 5000
     },
     "jobUpdateInterval": 55,
-    "blockPollIntervalMs": 250
+    "blockPollIntervalMs": 250,
+    "startupRetryAttempts": 5,
+    "startupRetryDelay": 5000,
+    "debug": false,
+    "logFile": null
 }

@@ -9,6 +9,18 @@ const
     Share = require('./class.Share'),
     JobManager = require('./class.JobManager');
 
+// Get logger from global or create fallback
+const getLogger = () => global.stratumLogger || {
+    debug: () => {},
+    info: console.log,
+    warn: console.warn,
+    error: console.error
+};
+
+// Default startup retry settings
+const DEFAULT_STARTUP_RETRY_ATTEMPTS = 5;
+const DEFAULT_STARTUP_RETRY_DELAY = 5000; // 5 seconds
+
 
 class Stratum extends EventEmitter {
 
@@ -25,6 +37,7 @@ class Stratum extends EventEmitter {
         _._config = config;
 
         _._isInit = false;
+        _._isDestroyed = false;
         _._server = null;
         _._jobManager = null;
         _._rpcClient = null;
@@ -97,6 +110,18 @@ class Stratum extends EventEmitter {
      */
     static get EVENT_NEXT_JOB() { return 'nextJob'; }
 
+    /**
+     * The name of event emitted when RPC connection is lost.
+     * @returns {string}
+     */
+    static get EVENT_RPC_DISCONNECTED() { return 'rpcDisconnected'; }
+
+    /**
+     * The name of event emitted when RPC connection is restored.
+     * @returns {string}
+     */
+    static get EVENT_RPC_CONNECTED() { return 'rpcConnected'; }
+
 
     /**
      * Determine if the stratum is initialized and started.
@@ -131,16 +156,36 @@ class Stratum extends EventEmitter {
 
     /**
      * Start the stratum.
+     * 
+     * @param [callback] {function(err:*)} Called when initialization completes or fails.
      */
     init(callback) {
         precon.opt_funct(callback, 'callback');
 
         const _ = this;
+        const logger = getLogger();
 
+        if (_._isInit) {
+            logger.warn('Stratum is already initialized');
+            callback && callback(null);
+            return;
+        }
+
+        if (_._isDestroyed) {
+            const err = new Error('Cannot initialize destroyed stratum instance');
+            logger.error(err.message);
+            callback && callback(err);
+            return;
+        }
+
+        logger.debug('Initializing stratum...');
+
+        // Create components
         _._server = _._createServer();
         _._jobManager = _._createJobManager();
         _._rpcClient = _._createRpcClient();
 
+        // Set up server event forwarding
         _._server.on(Server.EVENT_CLIENT_CONNECT, _._reEmit(Stratum.EVENT_CLIENT_CONNECT));
         _._server.on(Server.EVENT_CLIENT_DISCONNECT, _._reEmit(Stratum.EVENT_CLIENT_DISCONNECT));
         _._server.on(Server.EVENT_CLIENT_SUBSCRIBE, _._reEmit(Stratum.EVENT_CLIENT_SUBSCRIBE));
@@ -150,19 +195,90 @@ class Stratum extends EventEmitter {
         _._server.on(Server.EVENT_CLIENT_MALFORMED_MESSAGE, _._reEmit(Stratum.EVENT_CLIENT_MALFORMED_MESSAGE));
         _._server.on(Server.EVENT_CLIENT_UNKNOWN_STRATUM_METHOD, _._reEmit(Stratum.EVENT_CLIENT_UNKNOWN_STRATUM_METHOD));
 
-        // load first job
-        _._jobManager.init((err) => {
-
-            if (err)
-                throw new Error(`Failed to start stratum server. Failed to get first job: ${JSON.stringify(err)}`);
-
-            _._server.start(() => {
-                _._jobManager.on(JobManager.EVENT_NEXT_JOB, _._onNextJob.bind(_));
-                callback && callback();
-            });
+        // Handle server errors
+        _._server.on(Server.EVENT_SERVER_ERROR, (ev) => {
+            logger.error('Server error event:', ev.error.message);
         });
 
-        _._isInit = true;
+        // Test RPC connection first with retries
+        _._initWithRetry(callback);
+    }
+
+
+    /**
+     * Initialize with retry logic
+     * @param callback
+     * @param attempt
+     * @private
+     */
+    _initWithRetry(callback, attempt = 1) {
+        const _ = this;
+        const logger = getLogger();
+        const maxAttempts = _._config.startupRetryAttempts || DEFAULT_STARTUP_RETRY_ATTEMPTS;
+        const retryDelay = _._config.startupRetryDelay || DEFAULT_STARTUP_RETRY_DELAY;
+
+        logger.info(`Connecting to Mynta daemon (attempt ${attempt}/${maxAttempts})...`);
+
+        // Test RPC connection
+        _._rpcClient.testConnection((err, info) => {
+            if (err) {
+                if (attempt < maxAttempts && !_._isDestroyed) {
+                    logger.warn(`RPC connection failed: ${err.message}`);
+                    logger.info(`Retrying in ${retryDelay / 1000} seconds...`);
+                    
+                    setTimeout(() => {
+                        _._initWithRetry(callback, attempt + 1);
+                    }, retryDelay);
+                    return;
+                }
+
+                // Max retries reached
+                logger.error(`Failed to connect to Mynta daemon after ${attempt} attempts`);
+                logger.error('Please ensure:');
+                logger.error('  1. Mynta daemon (myntad or mynta-qt) is running');
+                logger.error('  2. RPC is enabled (server=1 in mynta.conf)');
+                logger.error('  3. RPC credentials match config.json');
+                logger.error(`  4. RPC is accessible at ${_._config.rpc.host}:${_._config.rpc.port}`);
+                
+                callback && callback(err);
+                return;
+            }
+
+            logger.info('Connected to Mynta daemon');
+            if (info) {
+                logger.debug(`Chain: ${info.chain}, Blocks: ${info.blocks}, Headers: ${info.headers}`);
+            }
+
+            _.emit(Stratum.EVENT_RPC_CONNECTED, { info: info });
+
+            // Initialize job manager
+            _._jobManager.init((jobErr) => {
+                if (jobErr) {
+                    logger.error('Failed to get initial block template:', jobErr.message || jobErr);
+                    logger.error('The daemon may still be syncing or IBD (Initial Block Download) is in progress.');
+                    callback && callback(jobErr);
+                    return;
+                }
+
+                logger.debug('Job manager initialized');
+
+                // Start server
+                _._server.start((serverErr) => {
+                    if (serverErr) {
+                        logger.error('Failed to start stratum server:', serverErr.message);
+                        callback && callback(serverErr);
+                        return;
+                    }
+
+                    // Set up job broadcasting
+                    _._jobManager.on(JobManager.EVENT_NEXT_JOB, _._onNextJob.bind(_));
+
+                    _._isInit = true;
+                    logger.info('Stratum server initialized successfully');
+                    callback && callback(null);
+                });
+            });
+        });
     }
 
 
@@ -175,10 +291,34 @@ class Stratum extends EventEmitter {
         precon.opt_funct(callback, 'callback');
 
         const _ = this;
-        _._jobManager && _._jobManager.destroy();
-        _._server && _._server.stop(() => {
+        const logger = getLogger();
+
+        if (_._isDestroyed) {
             callback && callback();
-        });
+            return;
+        }
+
+        _._isDestroyed = true;
+        logger.info('Destroying stratum instance...');
+
+        // Destroy job manager first
+        if (_._jobManager) {
+            try {
+                _._jobManager.destroy();
+            } catch (err) {
+                logger.error('Error destroying job manager:', err.message);
+            }
+        }
+
+        // Stop server
+        if (_._server) {
+            _._server.stop(() => {
+                logger.debug('Server stopped');
+                callback && callback();
+            });
+        } else {
+            callback && callback();
+        }
     }
 
 
@@ -215,24 +355,31 @@ class Stratum extends EventEmitter {
         precon.instanceOf(share, Share, 'share');
 
         const _ = this;
+        const logger = getLogger();
 
         if (share.isValidBlock) {
+            logger.info(`Submitting block to daemon...`);
 
             _._submitBlock(share, (err) => {
 
                 if (err) {
+                    logger.error('Block submission failed:', err.message || err);
                     _._emitShare(share);
                     return;
                 }
 
-                _.jobManager.updateJob(() => {
-                    _._checkBlockAccepted(share, (err, result) => {
+                logger.info('Block submitted successfully, verifying...');
 
-                        if (err || !result.isAccepted) {
-                            share.isValidBlock = false
+                _.jobManager.updateJob(() => {
+                    _._checkBlockAccepted(share, (checkErr, result) => {
+
+                        if (checkErr || !result.isAccepted) {
+                            share.isValidBlock = false;
+                            logger.warn('Block was not accepted by the network');
                         }
                         else {
                             share.blockTxId = result.block.txId;
+                            logger.info(`Block accepted! TxID: ${share.blockTxId}`);
                         }
 
                         _._emitShare(share);
@@ -265,44 +412,56 @@ class Stratum extends EventEmitter {
             host: rpc.host,
             port: rpc.port,
             user: rpc.user,
-            password: rpc.password
+            password: rpc.password,
+            timeout: rpc.timeout || 30000,
+            retryAttempts: rpc.retryAttempts || 3,
+            retryDelay: rpc.retryDelay || 5000
         });
     }
 
 
     _submitBlock(share, callback) {
-
         const _ = this;
+        const logger = getLogger();
+
         _._rpcClient.cmd({
             method: 'submitblock',
             params: [share.blockHex],
             callback: (err, result) => {
                 if (err) {
-                    console.error(`Error while submitting block to node: ${JSON.stringify(err)}`);
+                    logger.error('Error submitting block to node:', err.message || err);
+                    callback(err);
                 }
                 else if (result) {
-                    console.error(`Node rejected a supposedly valid block: ${JSON.stringify(result)}`)
+                    // Non-null result means rejection
+                    logger.error('Node rejected block:', result);
+                    callback(new Error(`Block rejected: ${result}`));
                 }
-                callback(err || result);
+                else {
+                    // null result means success
+                    callback(null);
+                }
             }
         });
     }
 
 
     _checkBlockAccepted(share, callback) {
-
         const _ = this;
+        const logger = getLogger();
+
         _._rpcClient.cmd({
             method: 'getblock',
             params: [share.blockId],
             callback: (err, block) => {
                 if (err) {
-                    console.error(`Failed to verify block submission: ${JSON.stringify(err)}`);
+                    logger.error('Failed to verify block submission:', err.message || err);
                     callback(err, {
                         isAccepted: false
                     });
                 }
                 else {
+                    logger.debug('Block verified on chain');
                     callback(null, {
                         isAccepted: true,
                         block: block
@@ -316,41 +475,56 @@ class Stratum extends EventEmitter {
     _emitShare(share) {
         const _ = this;
 
-        _.emit(Stratum.EVENT_SHARE_SUBMITTED, {
-            client: share.client,
-            share: share
-        });
+        try {
+            _.emit(Stratum.EVENT_SHARE_SUBMITTED, {
+                client: share.client,
+                share: share
+            });
+        } catch (err) {
+            const logger = getLogger();
+            logger.error('Error emitting share event:', err);
+        }
     }
 
 
     _onNextJob(ev) {
-        precon.notNull(ev.job, 'job');
-        precon.boolean(ev.isNewBlock, 'isNewBlock');
-
         const _ = this;
-        const job = ev.job;
-        const isNewBlock = ev.isNewBlock;
+        const logger = getLogger();
 
-        _.emit(Stratum.EVENT_NEXT_JOB, { job: job, isNewBlock: isNewBlock });
+        try {
+            precon.notNull(ev.job, 'job');
+            precon.boolean(ev.isNewBlock, 'isNewBlock');
 
-        if (isNewBlock)
-            _.emit(Stratum.EVENT_NEW_BLOCK, { job: job })
+            const job = ev.job;
+            const isNewBlock = ev.isNewBlock;
 
-        _._server.sendMiningJob({
-            job: job,
-            isNewBlock: isNewBlock
-        });
+            _.emit(Stratum.EVENT_NEXT_JOB, { job: job, isNewBlock: isNewBlock });
+
+            if (isNewBlock)
+                _.emit(Stratum.EVENT_NEW_BLOCK, { job: job });
+
+            _._server.sendMiningJob({
+                job: job,
+                isNewBlock: isNewBlock
+            });
+        } catch (err) {
+            logger.error('Error processing next job:', err);
+        }
     }
 
 
     _reEmit(eventName, handlerFn) {
         const _ = this;
         return function(ev) {
-            handlerFn && handlerFn(ev);
-            _.emit(eventName, ev);
+            try {
+                handlerFn && handlerFn(ev);
+                _.emit(eventName, ev);
+            } catch (err) {
+                const logger = getLogger();
+                logger.error(`Error in event handler for ${eventName}:`, err);
+            }
         };
     }
 }
 
 module.exports = Stratum;
-
