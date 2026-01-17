@@ -1,6 +1,6 @@
 {
   "name": "mynta-stratum",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "KAWPoW Stratum Proxy for Mynta Solo Mining",
   "main": "start.js",
   "bin": "start.js",
@@ -16,7 +16,18 @@
   },
   "scripts": {
     "start": "node start.js",
-    "build": "pkg . --targets node22-win-x64 --output mynta-stratum.exe"
+    "build": "pkg . --targets node22-win-x64 --output mynta-stratum.exe",
+    "build:linux": "pkg . --targets node22-linux-x64 --output mynta-stratum-linux",
+    "test": "node test/run-tests.js",
+    "test:unit": "node test/run-tests.js --unit",
+    "test:integration": "node test/run-tests.js --integration",
+    "test:windows": "node test/run-tests.js --windows",
+    "test:verbose": "node test/run-tests.js --verbose",
+    "test:ci": "node test/run-tests.js --all",
+    "test:binary": "node test/windows/binary-tests.js",
+    "test:all-win": "npm run build && npm run test && npm run test:binary",
+    "docker:build-test": "docker build -t mynta-stratum-wintest -f test/docker/Dockerfile.windows-test .",
+    "docker:test": "docker run --rm -v $(pwd):/app mynta-stratum-wintest bash -c 'cd /app && npm install && npm run test:all-win'"
   },
   "dependencies": {
     "@mintpond/hasher-kawpow": "git+https://github.com/LabyrinthCore/kawpow-hasher",
@@ -46,5 +57,8 @@
   ],
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "mocha": "^10.2.0"
   }
 }

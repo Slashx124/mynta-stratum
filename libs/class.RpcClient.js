@@ -373,13 +373,22 @@ class RpcClient {
         }
         catch (err) {
             // Handle NaN values in JSON (non-standard but some daemons output this)
-            if (json && json.indexOf(':-nan') !== -1) {
-                const fixedJson = json.replace(/:-nan,/g, ':0');
-                result = _._tryParseJson(fixedJson);
-            }
-            else if (json && json.indexOf(':nan') !== -1) {
-                const fixedJson = json.replace(/:nan,/g, ':0');
-                result = _._tryParseJson(fixedJson);
+            // Match patterns like :-nan, :nan, :-nan} :nan}
+            if (json && (json.indexOf(':-nan') !== -1 || json.indexOf(':nan') !== -1)) {
+                // Replace all NaN patterns with 0 (handles -nan and nan, with comma or closing brace)
+                const fixedJson = json
+                    .replace(/:-nan([,}])/g, ':0$1')
+                    .replace(/:nan([,}])/g, ':0$1');
+                
+                // Only recurse if we actually made a change to avoid infinite recursion
+                if (fixedJson !== json) {
+                    result = _._tryParseJson(fixedJson);
+                } else {
+                    result = {
+                        error: err,
+                        parsed: null
+                    };
+                }
             }
             else {
                 result = {

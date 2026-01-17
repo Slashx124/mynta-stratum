@@ -1,0 +1,78 @@
+# =============================================================================
+# Windows Testing Environment for Mynta Stratum Proxy
+# =============================================================================
+#
+# Uses Wine to run Windows executables built with pkg
+#
+# USAGE:
+#   # Build test image
+#   docker build -t mynta-stratum-wintest -f test/docker/Dockerfile.windows-test .
+#
+#   # Run tests
+#   docker run --rm -v $(pwd):/app mynta-stratum-wintest npm run test:windows-docker
+#
+# =============================================================================
+
+FROM ubuntu:22.04
+
+LABEL maintainer="Mynta Project"
+LABEL description="Windows test environment for mynta-stratum using Wine"
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# Enable 32-bit architecture for Wine and install Wine from WineHQ
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gnupg \
+        software-properties-common \
+        wget && \
+    # Add WineHQ repository
+    mkdir -pm755 /etc/apt/keyrings && \
+    wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key && \
+    wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/jammy/winehq-jammy.sources && \
+    apt-get update && \
+    # Install Wine
+    apt-get install -y --install-recommends winehq-stable || \
+    apt-get install -y wine wine64 || true && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Node.js and build tools
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \
+    apt-get update && \
+    apt-get install -y nodejs build-essential python3 xvfb && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install pkg globally for building Windows executables
+RUN npm install -g @yao-pkg/pkg
+
+# Create a non-root user for testing
+RUN useradd -m -s /bin/bash tester && \
+    mkdir -p /app /home/tester/.wine && \
+    chown -R tester:tester /app /home/tester
+
+# Configure Wine
+ENV WINEPREFIX=/home/tester/.wine
+ENV WINEDEBUG=-all
+ENV DISPLAY=:99
+
+# Switch to test user
+USER tester
+WORKDIR /home/tester
+
+# Initialize Wine - may fail but that's OK
+RUN xvfb-run -a wine64 --version 2>/dev/null || \
+    wine64 --version 2>/dev/null || \
+    wine --version 2>/dev/null || \
+    echo "Wine not fully available, will skip Wine tests"
+
+# Set working directory
+WORKDIR /app
+
+# Default command
+CMD ["/bin/bash"]
