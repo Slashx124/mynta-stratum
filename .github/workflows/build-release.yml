@@ -7,14 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g., v1.1.0)'
+        description: 'Version tag (e.g., v1.2.0)'
         required: true
-        default: 'v1.1.0'
+        default: 'v1.2.0'
 
 permissions:
   contents: write
 
 jobs:
+  # =============================================================================
+  # Build Windows x64 executable
+  # =============================================================================
   build-windows:
     runs-on: windows-latest
     
@@ -49,8 +52,8 @@ jobs:
         shell: pwsh
         run: |
           @"
-          MYNTA STRATUM PROXY - QUICK START
-          ==================================
+          MYNTA STRATUM PROXY - QUICK START (Windows)
+          ============================================
           
           1. Configure mynta.conf with: server=1, rpcuser, rpcpassword
           2. Copy config.example.json to config.json
@@ -71,9 +74,169 @@ jobs:
           name: mynta-stratum-win64
           path: mynta-stratum-win64.zip
 
+  # =============================================================================
+  # Build Linux x64 static executable
+  # =============================================================================
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install pkg
+        run: npm install -g @yao-pkg/pkg
+
+      - name: Build Linux executable
+        run: pkg . --targets node22-linux-x64 --output mynta-stratum
+
+      - name: Make executable
+        run: chmod +x mynta-stratum
+
+      - name: Verify binary
+        run: |
+          file mynta-stratum
+          ls -lh mynta-stratum
+
+      - name: Create release package
+        run: |
+          mkdir -p release
+          cp mynta-stratum release/
+          cp config.example.json release/
+          cp README.md release/
+          cp LICENSE release/
+
+      - name: Create QUICKSTART guide
+        run: |
+          cat > release/QUICKSTART.txt << 'EOF'
+          MYNTA STRATUM PROXY - QUICK START (Linux)
+          ==========================================
+          
+          1. Configure mynta.conf with: server=1, rpcuser, rpcpassword
+          2. Copy config.example.json to config.json
+          3. Edit config.json with your wallet address and RPC password
+          4. Run: ./mynta-stratum
+          5. Point miner to stratum+tcp://127.0.0.1:3333
+          
+          TROUBLESHOOTING: ./mynta-stratum --debug --log=stratum.log
+          
+          PERMISSIONS: If needed, run: chmod +x mynta-stratum
+          EOF
+
+      - name: Create tarball
+        run: tar -czvf mynta-stratum-linux-x64.tar.gz -C release .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mynta-stratum-linux-x64
+          path: mynta-stratum-linux-x64.tar.gz
+
+  # =============================================================================
+  # Build Linux ARM64 static executable
+  # =============================================================================
+  build-linux-arm64:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install pkg
+        run: npm install -g @yao-pkg/pkg
+
+      - name: Build Linux ARM64 executable
+        run: pkg . --targets node22-linux-arm64 --output mynta-stratum
+
+      - name: Verify binary
+        run: |
+          file mynta-stratum
+          ls -lh mynta-stratum
+
+      - name: Create release package
+        run: |
+          mkdir -p release
+          cp mynta-stratum release/
+          cp config.example.json release/
+          cp README.md release/
+          cp LICENSE release/
+
+      - name: Create QUICKSTART guide
+        run: |
+          cat > release/QUICKSTART.txt << 'EOF'
+          MYNTA STRATUM PROXY - QUICK START (Linux ARM64)
+          ================================================
+          
+          1. Configure mynta.conf with: server=1, rpcuser, rpcpassword
+          2. Copy config.example.json to config.json
+          3. Edit config.json with your wallet address and RPC password
+          4. Run: ./mynta-stratum
+          5. Point miner to stratum+tcp://127.0.0.1:3333
+          
+          TROUBLESHOOTING: ./mynta-stratum --debug --log=stratum.log
+          
+          PERMISSIONS: If needed, run: chmod +x mynta-stratum
+          EOF
+
+      - name: Create tarball
+        run: tar -czvf mynta-stratum-linux-arm64.tar.gz -C release .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mynta-stratum-linux-arm64
+          path: mynta-stratum-linux-arm64.tar.gz
+
+  # =============================================================================
+  # Create GitHub Release with all artifacts
+  # =============================================================================
+  release:
+    needs: [build-windows, build-linux, build-linux-arm64]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mynta-stratum-win64
+          path: ./artifacts
+
+      - name: Download Linux x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mynta-stratum-linux-x64
+          path: ./artifacts
+
+      - name: Download Linux ARM64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mynta-stratum-linux-arm64
+          path: ./artifacts
+
+      - name: List artifacts
+        run: ls -la ./artifacts/
+
       - name: Get version
         id: version
-        shell: bash
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
@@ -81,25 +244,61 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Create checksums
+        run: |
+          cd artifacts
+          sha256sum *.zip *.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: Mynta Stratum Proxy ${{ steps.version.outputs.version }}
           body: |
-            ## Mynta Stratum Proxy
+            ## Mynta Stratum Proxy ${{ steps.version.outputs.version }}
             
             Solo mining proxy for Mynta (MNT) with KawPoW GPU miners.
             
+            ### Downloads
+            
+            | Platform | File | Architecture |
+            |----------|------|--------------|
+            | Windows | `mynta-stratum-win64.zip` | x86_64 |
+            | Linux | `mynta-stratum-linux-x64.tar.gz` | x86_64 |
+            | Linux | `mynta-stratum-linux-arm64.tar.gz` | ARM64 (Raspberry Pi, etc.) |
+            
             ### Quick Start
-            1. Extract zip, copy config.example.json to config.json
-            2. Edit config.json with wallet address and RPC password  
-            3. Run mynta-stratum.exe
-            4. Point miner to stratum+tcp://127.0.0.1:3333
+            
+            **Windows:**
+            1. Extract zip, copy `config.example.json` to `config.json`
+            2. Edit `config.json` with wallet address and RPC password  
+            3. Run `mynta-stratum.exe`
+            4. Point miner to `stratum+tcp://127.0.0.1:3333`
+            
+            **Linux:**
+            1. Extract tarball: `tar -xzvf mynta-stratum-linux-x64.tar.gz`
+            2. Copy `config.example.json` to `config.json`
+            3. Edit `config.json` with wallet address and RPC password
+            4. Run `chmod +x mynta-stratum && ./mynta-stratum`
+            5. Point miner to `stratum+tcp://127.0.0.1:3333`
             
             ### Debug Mode
-            Run with: mynta-stratum.exe --debug --log=stratum.log
-          files: mynta-stratum-win64.zip
+            ```bash
+            # Windows
+            mynta-stratum.exe --debug --log=stratum.log
+            
+            # Linux
+            ./mynta-stratum --debug --log=stratum.log
+            ```
+            
+            ### Checksums (SHA256)
+            See `SHA256SUMS.txt` attached to this release.
+          files: |
+            artifacts/mynta-stratum-win64.zip
+            artifacts/mynta-stratum-linux-x64.tar.gz
+            artifacts/mynta-stratum-linux-arm64.tar.gz
+            artifacts/SHA256SUMS.txt
           draft: false
           prerelease: false
         env:

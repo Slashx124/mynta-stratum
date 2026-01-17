@@ -332,7 +332,7 @@ function startStratum() {
 
     // Startup banner
     logger.info('='.repeat(60));
-    logger.info('Mynta Stratum Proxy v1.2.0');
+    logger.info('Mynta Stratum Proxy v1.2.1');
     logger.info('='.repeat(60));
     logger.info(`Mining address: ${config.coinbaseAddress}`);
     logger.info(`RPC endpoint: ${config.rpc.host}:${config.rpc.port}`);
