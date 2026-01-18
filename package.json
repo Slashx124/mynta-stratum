@@ -1,6 +1,6 @@
 {
   "name": "mynta-stratum",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "KAWPoW Stratum Proxy for Mynta Solo Mining",
   "main": "start.js",
   "bin": "start.js",

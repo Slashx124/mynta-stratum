@@ -30,6 +30,12 @@ class StratumError {
     static get INCORRECT_NONCE_SIZE() { return INCORRECT_NONCE_SIZE }
 
     /**
+     * Incorrect nonce prefix (extraNonce1 mismatch).
+     * @returns {StratumError}
+     */
+    static get INCORRECT_NONCE_PREFIX() { return INCORRECT_NONCE_PREFIX }
+
+    /**
      * Job share belongs to is not valid or found.
      * @returns {StratumError}
      */
@@ -124,6 +130,7 @@ class StratumError {
 }
 
 const INCORRECT_NONCE_SIZE = new StratumError(StratumErrorCode.OTHER, 'Incorrect size of nonce');
+const INCORRECT_NONCE_PREFIX = new StratumError(StratumErrorCode.OTHER, 'Incorrect nonce prefix');
 const STALE_SHARE = new StratumError(StratumErrorCode.STALE, 'Stale share - Job not found');
 const DUPLICATE_SHARE = new StratumError(StratumErrorCode.DUPLICATE, 'Duplicate share');
 const LOW_DIFFICULTY = new StratumError(StratumErrorCode.LOW_DIFFICULTY, 'Low difficulty');
