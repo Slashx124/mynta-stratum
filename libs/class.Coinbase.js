@@ -146,13 +146,30 @@ class Coinbase {
             devReward = 0;
         }
 
+        // Masternode payment support
+        // Check for masternode payment info in block template
+        let mnScript = null;
+        let mnReward = 0;
+        if (blockTemplate.masternode && blockTemplate.masternode.script) {
+            mnScript = Buffer.from(blockTemplate.masternode.script, "hex");
+            mnReward = blockTemplate.masternode.amount || 0;
+        }
+
         let poolRewardSt = blockTemplate.coinbasevalue;
 
         _._outputCount = 0;
 
+        // Output 1: Pool/Miner reward
         _._addOutput(outputsArr, poolRewardSt, poolAddressScript, true);
+        
+        // Output 2: Dev allocation (if applicable)
         if (devScript && devReward > 0) {
             _._addOutput(outputsArr, devReward, devScript, true);
+        }
+
+        // Output 3: Masternode payment (if applicable)
+        if (mnScript && mnReward > 0) {
+            _._addOutput(outputsArr, mnReward, mnScript, true);
         }
 
         const default_witness_commitment = blockTemplate.default_witness_commitment;

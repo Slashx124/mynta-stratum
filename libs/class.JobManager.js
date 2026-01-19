@@ -129,7 +129,78 @@ class JobManager extends EventEmitter {
                 ],
                 rules: ['segwit']
             }],
-            callback: callback
+            callback: (err, blockTemplate) => {
+                if (err) {
+                    callback(err, null);
+                    return;
+                }
+                
+                // If masternode info is already in template, use it directly
+                if (blockTemplate.masternode) {
+                    callback(null, blockTemplate);
+                    return;
+                }
+                
+                // Otherwise, try to fetch masternode winner info separately
+                _._fetchMasternodePayment(blockTemplate, callback);
+            }
+        });
+    }
+
+    _fetchMasternodePayment(blockTemplate, callback) {
+        const _ = this;
+        
+        // Try to get masternode winner for this height
+        _._stratum.rpcClient.cmd({
+            method: 'masternode',
+            params: ['winner'],
+            callback: (err, winners) => {
+                if (err || !winners || !Array.isArray(winners) || winners.length === 0) {
+                    // No masternode info available, proceed without it
+                    callback(null, blockTemplate);
+                    return;
+                }
+                
+                // Find winner for this block height
+                const height = blockTemplate.height;
+                const winner = winners.find(w => w.height === height);
+                
+                if (!winner || !winner.payoutAddress) {
+                    callback(null, blockTemplate);
+                    return;
+                }
+                
+                // We need to get the payout script for this address
+                // Calculate masternode payment (45% of block subsidy)
+                // Block subsidy calculation: starts at 5000, halves every 2,100,000 blocks
+                const halvings = Math.floor(height / 2100000);
+                const blockSubsidy = Math.floor(5000 * 100000000 / Math.pow(2, halvings)); // in satoshis
+                const mnPayment = Math.floor(blockSubsidy * 45 / 100); // 45% to masternode
+                
+                // Convert address to script using validateaddress
+                _._stratum.rpcClient.cmd({
+                    method: 'validateaddress',
+                    params: [winner.payoutAddress],
+                    callback: (err2, addrInfo) => {
+                        if (err2 || !addrInfo || !addrInfo.scriptPubKey) {
+                            callback(null, blockTemplate);
+                            return;
+                        }
+                        
+                        // Add masternode payment info to template
+                        blockTemplate.masternode = {
+                            proTxHash: winner.proTxHash,
+                            amount: mnPayment,
+                            script: addrInfo.scriptPubKey,
+                            payee: winner.payoutAddress
+                        };
+                        
+                        console.log(`[INFO] Masternode payment: ${mnPayment / 100000000} MYNTA to ${winner.payoutAddress}`);
+                        
+                        callback(null, blockTemplate);
+                    }
+                });
+            }
         });
     }
 
