@@ -20,5 +20,13 @@
     "startupRetryAttempts": 5,
     "startupRetryDelay": 5000,
     "debug": false,
-    "logFile": null
+    "logFile": null,
+    "vardiff": {
+        "enabled": true,
+        "minDiff": 0.001,
+        "maxDiff": 1000000,
+        "targetShareTime": 15,
+        "retargetTime": 90,
+        "variancePercent": 30
+    }
 }

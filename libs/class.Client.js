@@ -58,6 +58,10 @@ class Client extends EventEmitter {
         _._disconnectReason = '';
         _._lastActivity = mu.now(); // Initialize to connection time
 
+        // Vardiff tracking
+        _._shareTimestamps = [];
+        _._lastDifficultyUpdate = mu.now();
+
         _._socket.on(TcpSocket.EVENT_MESSAGE_IN, _._onSocketMessageIn.bind(_));
         _._socket.on(TcpSocket.EVENT_MALFORMED_MESSAGE, _._onMalformedMessage.bind(_));
         _._socket.on(TcpSocket.EVENT_DISCONNECT, _._onDisconnect.bind(_));
@@ -231,6 +235,26 @@ class Client extends EventEmitter {
      * @returns {number}
      */
     get diff() { return this._port.diff; }
+    set diff(diff) {
+        precon.positiveNumber(diff, 'diff');
+        this._port.diff = diff;
+    }
+
+    /**
+     * Get the share timestamp history for vardiff calculations.
+     * @returns {number[]}
+     */
+    get shareTimestamps() { return this._shareTimestamps; }
+
+    /**
+     * Get the time of the last difficulty update.
+     * @returns {number}
+     */
+    get lastDifficultyUpdate() { return this._lastDifficultyUpdate; }
+    set lastDifficultyUpdate(time) {
+        precon.positiveInteger(time, 'lastDifficultyUpdate');
+        this._lastDifficultyUpdate = time;
+    }
 
     /**
      * Get the disconnect reason after the client disconnects, if any recorded.
@@ -287,13 +311,30 @@ class Client extends EventEmitter {
     }
 
 
+    /**
+     * Record a share submission timestamp for vardiff tracking.
+     */
+    recordShare() {
+        const _ = this;
+        const now = mu.now();
+        
+        _._shareTimestamps.push(now);
+        
+        // Keep only last 100 timestamps for vardiff calculations
+        if (_._shareTimestamps.length > 100) {
+            _._shareTimestamps = _._shareTimestamps.slice(-100);
+        }
+    }
+
     toJSON() {
         const _ = this;
         return {
             subscriptionId: _.subscriptionIdHex,
             ipAddress: _.ipAddress,
             port: _.port.number,
-            worker: _.isAuthorized ? _.workerName : undefined
+            difficulty: _.diff,
+            worker: _.isAuthorized ? _.workerName : undefined,
+            shares: _._shareTimestamps.length
         }
     }
 

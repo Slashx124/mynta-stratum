@@ -287,6 +287,39 @@ class Server extends EventEmitter {
         logger.debug(`Job broadcast to ${sentCount} client(s)`);
     }
 
+    /**
+     * Send difficulty update to a specific client.
+     * 
+     * @param client {Client} The client to send the difficulty update to.
+     */
+    sendDifficultyUpdate(client) {
+        precon.instanceOf(client, require('./class.Client'), 'client');
+        
+        const _ = this;
+        const logger = getLogger();
+        
+        if (!client.isSubscribed) {
+            logger.warn(`Cannot send difficulty update to unsubscribed client ${client.subscriptionIdHex}`);
+            return;
+        }
+        
+        try {
+            // Send mining.set_difficulty notification
+            const difficultyMessage = {
+                id: null,
+                method: 'mining.set_difficulty',
+                params: [client.diff]
+            };
+            
+            const messageStr = JSON.stringify(difficultyMessage) + '\n';
+            client.socket.write(messageStr);
+            
+            logger.debug(`Sent difficulty update to ${client.subscriptionIdHex}: ${client.diff}`);
+        } catch (err) {
+            logger.error(`Failed to send difficulty update to client ${client.subscriptionIdHex}:`, err.message);
+        }
+    }
+
 
     forEachClient(iteratorFn) {
         precon.funct(iteratorFn, 'iteratorFn');

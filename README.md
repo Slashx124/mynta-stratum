@@ -6,6 +6,8 @@ A standalone stratum proxy for solo mining **Mynta (MNT)** using any KawPoW-comp
 
 - **Standalone executable** - No Node.js installation required
 - **KawPoW algorithm** - Full share validation with native hasher
+- **Variable difficulty (vardiff)** - Automatic per-miner difficulty adjustment based on hash rate
+- **Multi-miner support** - Proper share tracking and difficulty management for multiple concurrent miners
 - **Easy configuration** - Simple JSON config file
 - **Works with all major miners** - T-Rex, GMiner, NBMiner, TeamRedMiner, etc.
 - **Debug mode** - Detailed logging for troubleshooting
@@ -73,6 +75,48 @@ Copy `config.example.json` to `config.json` and edit:
 | `blockPollIntervalMs` | Block polling interval in milliseconds | 250 |
 | `debug` | Enable debug logging | false |
 | `logFile` | Path to log file (null = console only) | null |
+| `vardiff.enabled` | Enable variable difficulty | true |
+| `vardiff.minDiff` | Minimum difficulty | 0.001 |
+| `vardiff.maxDiff` | Maximum difficulty | 1000000 |
+| `vardiff.targetShareTime` | Target seconds between shares | 15 |
+| `vardiff.retargetTime` | Seconds between difficulty adjustments | 90 |
+| `vardiff.variancePercent` | Acceptable variance percentage | 30 |
+
+## Variable Difficulty (Vardiff)
+
+The stratum server automatically adjusts mining difficulty for each connected miner based on their hash rate. This ensures:
+
+- **Low-power miners** get lower difficulty for more frequent share submissions and better feedback
+- **High-power miners** get higher difficulty to reduce bandwidth and CPU overhead
+- **Optimal performance** targeting ~15 seconds between shares (configurable)
+
+### How Vardiff Works
+
+1. Each miner starts at the configured starting difficulty
+2. After submitting 10 shares, the server analyzes the submission rate
+3. If shares come too fast (< target time), difficulty increases (max 2x per adjustment)
+4. If shares come too slow (> target time), difficulty decreases (max 0.5x per adjustment)
+5. Adjustments happen every 90 seconds (configurable)
+6. Difficulty is clamped between minDiff and maxDiff
+
+### Vardiff Configuration
+
+Add to your `config.json`:
+
+```json
+{
+    "vardiff": {
+        "enabled": true,
+        "minDiff": 0.001,
+        "maxDiff": 1000000,
+        "targetShareTime": 15,
+        "retargetTime": 90,
+        "variancePercent": 30
+    }
+}
+```
+
+**Note**: For solo mining with a single miner, you may want to disable vardiff and set a fixed difficulty via `port.diff`.
 
 ## Debug Mode
 

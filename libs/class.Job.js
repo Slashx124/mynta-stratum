@@ -237,7 +237,7 @@ class Job {
         const _ = this;
         const extraNonce1Hex = share.extraNonce1Hex;
         const nonceHex = share.nonceHex;
-
+        
         const submitId = `${nonceHex}:${extraNonce1Hex}`;
 
         if (_._submitSet.has(submitId))

@@ -7,7 +7,8 @@ const
     Server = require('./class.Server'),
     Client = require('./class.Client'),
     Share = require('./class.Share'),
-    JobManager = require('./class.JobManager');
+    JobManager = require('./class.JobManager'),
+    VarDiff = require('./class.VarDiff');
 
 // Get logger from global or create fallback
 const getLogger = () => global.stratumLogger || {
@@ -41,6 +42,7 @@ class Stratum extends EventEmitter {
         _._server = null;
         _._jobManager = null;
         _._rpcClient = null;
+        _._varDiff = null;
     }
 
 
@@ -184,6 +186,7 @@ class Stratum extends EventEmitter {
         _._server = _._createServer();
         _._jobManager = _._createJobManager();
         _._rpcClient = _._createRpcClient();
+        _._varDiff = _._createVarDiff();
 
         // Set up server event forwarding
         _._server.on(Server.EVENT_CLIENT_CONNECT, _._reEmit(Stratum.EVENT_CLIENT_CONNECT));
@@ -357,6 +360,38 @@ class Stratum extends EventEmitter {
         const _ = this;
         const logger = getLogger();
 
+        // Record share timestamp for vardiff if valid
+        if (share.isValidShare) {
+            client.recordShare();
+            
+            // Check if difficulty adjustment is needed
+            const adjustment = _._varDiff.checkAdjustment(client);
+            if (adjustment && adjustment.shouldAdjust) {
+                const oldDiff = client.diff;
+                client.diff = adjustment.newDiff;
+                client.lastDifficultyUpdate = Date.now();
+                
+                logger.info(`Vardiff adjustment for ${client.workerName}: ${oldDiff.toFixed(6)} -> ${adjustment.newDiff.toFixed(6)} (${adjustment.reason}, avg interval: ${adjustment.avgInterval.toFixed(2)}s)`);
+                
+                // Send difficulty change to client
+                _._server.sendDifficultyUpdate(client);
+            }
+            
+            // Log estimated hash rate
+            if (client.shareTimestamps.length >= 10) {
+                const hashRate = _._varDiff.estimateHashRate(client);
+                const hashRateFormatted = hashRate > 1e9 
+                    ? (hashRate / 1e9).toFixed(2) + ' GH/s'
+                    : hashRate > 1e6
+                    ? (hashRate / 1e6).toFixed(2) + ' MH/s'
+                    : hashRate > 1e3
+                    ? (hashRate / 1e3).toFixed(2) + ' KH/s'
+                    : hashRate.toFixed(2) + ' H/s';
+                
+                logger.debug(`${client.workerName} estimated hashrate: ${hashRateFormatted}`);
+            }
+        }
+
         if (share.isValidBlock) {
             logger.info(`Submitting block to daemon...`);
 
@@ -416,6 +451,20 @@ class Stratum extends EventEmitter {
             timeout: rpc.timeout || 30000,
             retryAttempts: rpc.retryAttempts || 3,
             retryDelay: rpc.retryDelay || 5000
+        });
+    }
+
+    _createVarDiff() {
+        const _ = this;
+        const vardiffConfig = _._config.vardiff || {};
+        
+        return new VarDiff({
+            enabled: vardiffConfig.enabled !== false, // Default to enabled if not specified
+            minDiff: vardiffConfig.minDiff || 0.001,
+            maxDiff: vardiffConfig.maxDiff || 1000000,
+            targetShareTime: vardiffConfig.targetShareTime || 15,
+            retargetTime: vardiffConfig.retargetTime || 90,
+            variancePercent: vardiffConfig.variancePercent || 30
         });
     }
 
