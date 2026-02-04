@@ -27,6 +27,8 @@
         "maxDiff": 1000000,
         "targetShareTime": 15,
         "retargetTime": 90,
-        "variancePercent": 30
+        "variancePercent": 30,
+        "useProportional": true,
+        "adjustmentFactor": 2
     }
 }

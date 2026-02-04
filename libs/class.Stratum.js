@@ -464,7 +464,10 @@ class Stratum extends EventEmitter {
             maxDiff: vardiffConfig.maxDiff || 1000000,
             targetShareTime: vardiffConfig.targetShareTime || 15,
             retargetTime: vardiffConfig.retargetTime || 90,
-            variancePercent: vardiffConfig.variancePercent || 30
+            variancePercent: vardiffConfig.variancePercent || 30,
+            // New configurable options
+            adjustmentFactor: vardiffConfig.adjustmentFactor || 2,
+            useProportional: vardiffConfig.useProportional !== false // Default to proportional
         });
     }
 

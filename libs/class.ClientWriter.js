@@ -91,6 +91,25 @@ class ClientWriter {
             ]
         });
     }
+
+
+    /**
+     * Send a text message notification to the miner.
+     * Uses client.show_message method which most miners support.
+     *
+     * @param message {string} The message to send
+     */
+    showMessage(message) {
+        precon.string(message, 'message');
+
+        const _ = this;
+
+        _._socket.send({
+            id: null,
+            method: 'client.show_message',
+            params: [message]
+        });
+    }
 }
 
 module.exports = ClientWriter;

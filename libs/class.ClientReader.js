@@ -155,10 +155,19 @@ class ClientReader {
 
             if (isAuthorized) {
                 _._client.isAuthorized = true; // setting this triggers event
-                _._client.setJob({
-                    job: _._stratum.jobManager.currentJob,
-                    isNewBlock: true
-                });
+                
+                // Send welcome message if configured
+                if (_._stratum.config.welcomeMessage) {
+                    _._writer.showMessage(_._stratum.config.welcomeMessage);
+                }
+                
+                // Only set job if one is available
+                if (_._stratum.jobManager.currentJob) {
+                    _._client.setJob({
+                        job: _._stratum.jobManager.currentJob,
+                        isNewBlock: true
+                    });
+                }
             }
         });
 

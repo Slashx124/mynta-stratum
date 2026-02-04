@@ -58,9 +58,10 @@ class Client extends EventEmitter {
         _._disconnectReason = '';
         _._lastActivity = mu.now(); // Initialize to connection time
 
-        // Vardiff tracking
+        // Vardiff tracking - use milliseconds (Date.now()) for precision
         _._shareTimestamps = [];
-        _._lastDifficultyUpdate = mu.now();
+        _._lastDifficultyUpdate = Date.now();
+        _._lastMonotonicTime = process.hrtime.bigint(); // For monotonic time validation
 
         _._socket.on(TcpSocket.EVENT_MESSAGE_IN, _._onSocketMessageIn.bind(_));
         _._socket.on(TcpSocket.EVENT_MALFORMED_MESSAGE, _._onMalformedMessage.bind(_));
@@ -247,13 +248,22 @@ class Client extends EventEmitter {
     get shareTimestamps() { return this._shareTimestamps; }
 
     /**
-     * Get the time of the last difficulty update.
+     * Get the time of the last difficulty update (milliseconds).
      * @returns {number}
      */
     get lastDifficultyUpdate() { return this._lastDifficultyUpdate; }
     set lastDifficultyUpdate(time) {
-        precon.positiveInteger(time, 'lastDifficultyUpdate');
+        precon.positiveNumber(time, 'lastDifficultyUpdate');
         this._lastDifficultyUpdate = time;
+    }
+
+    /**
+     * Get the last monotonic time for time validation.
+     * @returns {bigint}
+     */
+    get lastMonotonicTime() { return this._lastMonotonicTime; }
+    set lastMonotonicTime(time) {
+        this._lastMonotonicTime = time;
     }
 
     /**
@@ -313,17 +323,39 @@ class Client extends EventEmitter {
 
     /**
      * Record a share submission timestamp for vardiff tracking.
+     * Uses milliseconds (Date.now()) for precision and shift() for efficient array management.
+     * 
+     * @returns {boolean} True if timestamp was recorded, false if rejected due to time anomaly
      */
     recordShare() {
         const _ = this;
-        const now = mu.now();
+        const now = Date.now();
+        const currentMonotonic = process.hrtime.bigint();
+        
+        // Monotonic time protection - reject if system time went backwards
+        if (_._lastMonotonicTime && currentMonotonic < _._lastMonotonicTime) {
+            // Time went backwards, likely NTP adjustment - skip this timestamp
+            return false;
+        }
+        
+        // Also check if timestamps are consistent (allow small backwards drift of 1 second)
+        if (_._shareTimestamps.length > 0) {
+            const lastTimestamp = _._shareTimestamps[_._shareTimestamps.length - 1];
+            if (now < lastTimestamp - 1000) {
+                // System time jumped backwards significantly, skip
+                return false;
+            }
+        }
         
         _._shareTimestamps.push(now);
+        _._lastMonotonicTime = currentMonotonic;
         
-        // Keep only last 100 timestamps for vardiff calculations
-        if (_._shareTimestamps.length > 100) {
-            _._shareTimestamps = _._shareTimestamps.slice(-100);
+        // Keep only last 100 timestamps - use shift() to avoid array reassignment
+        while (_._shareTimestamps.length > 100) {
+            _._shareTimestamps.shift();
         }
+        
+        return true;
     }
 
     toJSON() {
