@@ -132,51 +132,62 @@ class Coinbase {
         const outputsArr = [];
         const blockTemplate = _._blockTemplate;
         const poolAddressScript = scripts.makeAddressScript(_._coinbaseAddress);
-        
-        // Support both Labyrinth (foundervalue) and Mynta (devallocation/devscript) formats
-        let devScript, devReward;
-        if (blockTemplate.foundervalue) {
-            devScript = Buffer.from(blockTemplate.foundervalue.script, "hex");
-            devReward = blockTemplate.foundervalue.value;
-        } else if (blockTemplate.devscript) {
+
+        let devScript = null;
+        let devReward = 0;
+        if (blockTemplate.devscript) {
             devScript = Buffer.from(blockTemplate.devscript, "hex");
             devReward = blockTemplate.devallocation || 0;
-        } else {
-            devScript = null;
-            devReward = 0;
+        } else if (blockTemplate.foundervalue) {
+            devScript = Buffer.from(blockTemplate.foundervalue.script, "hex");
+            devReward = blockTemplate.foundervalue.value;
         }
 
-        // Masternode payment support
-        // Check for masternode payment info in block template
+        // masternode.amount is the TOTAL MN budget (owner + operator combined).
+        // masternode.operator_reward is the operator's share (subset of amount).
+        // Owner gets: amount - operator_reward
         let mnScript = null;
-        let mnReward = 0;
-        if (blockTemplate.masternode && blockTemplate.masternode.script) {
+        let mnTotalReward = 0;
+        let mnOwnerReward = 0;
+        let operatorScript = null;
+        let operatorReward = 0;
+        if (blockTemplate.masternode && typeof blockTemplate.masternode === 'object' && blockTemplate.masternode.script) {
             mnScript = Buffer.from(blockTemplate.masternode.script, "hex");
-            mnReward = blockTemplate.masternode.amount || 0;
+            mnTotalReward = blockTemplate.masternode.amount || 0;
+            if (blockTemplate.masternode.operator_reward && blockTemplate.masternode.operator_script) {
+                operatorScript = Buffer.from(blockTemplate.masternode.operator_script, "hex");
+                operatorReward = blockTemplate.masternode.operator_reward;
+            }
+            mnOwnerReward = mnTotalReward - operatorReward;
         }
 
-        let poolRewardSt = blockTemplate.coinbasevalue;
+        // coinbasevalue is the TOTAL budget (miner + dev + masternode).
+        // masternode.amount already includes operator_reward, so only deduct it once.
+        let poolRewardSt = blockTemplate.coinbasevalue - devReward - mnTotalReward;
 
         _._outputCount = 0;
 
-        // Output 1: Pool/Miner reward
-        _._addOutput(outputsArr, poolRewardSt, poolAddressScript, true);
-        
-        // Output 2: Dev allocation (if applicable)
+        // Output 0: Miner reward
+        _._addOutput(outputsArr, poolRewardSt, poolAddressScript);
+
+        // Output 1: Dev allocation (consensus-enforced, mandatory)
         if (devScript && devReward > 0) {
-            _._addOutput(outputsArr, devReward, devScript, true);
+            _._addOutput(outputsArr, devReward, devScript);
         }
 
-        // Output 3: Masternode payment (if applicable)
-        if (mnScript && mnReward > 0) {
-            _._addOutput(outputsArr, mnReward, mnScript, true);
+        // Output 2: Masternode owner payment
+        if (mnScript && mnOwnerReward > 0) {
+            _._addOutput(outputsArr, mnOwnerReward, mnScript);
+        }
+
+        // Output 3: Masternode operator payment (if applicable)
+        if (operatorScript && operatorReward > 0) {
+            _._addOutput(outputsArr, operatorReward, operatorScript);
         }
 
         const default_witness_commitment = blockTemplate.default_witness_commitment;
         if (default_witness_commitment) {
-
             const witnessCommitmentBuf = Buffer.from(default_witness_commitment, 'hex');
-
             _._addOutput(outputsArr, 0, witnessCommitmentBuf);
         }
 

@@ -119,6 +119,8 @@ class JobManager extends EventEmitter {
 
     _getBlockTemplate(callback) {
         const _ = this;
+        const logger = global.stratumLogger || { debug: () => {}, info: console.log, warn: console.warn, error: console.error };
+
         _._stratum.rpcClient.cmd({
             method: 'getblocktemplate',
             params: [{
@@ -134,72 +136,17 @@ class JobManager extends EventEmitter {
                     callback(err, null);
                     return;
                 }
-                
-                // If masternode info is already in template, use it directly
-                if (blockTemplate.masternode) {
-                    callback(null, blockTemplate);
-                    return;
-                }
-                
-                // Otherwise, try to fetch masternode winner info separately
-                _._fetchMasternodePayment(blockTemplate, callback);
-            }
-        });
-    }
 
-    _fetchMasternodePayment(blockTemplate, callback) {
-        const _ = this;
-        
-        // Try to get masternode winner for this height
-        _._stratum.rpcClient.cmd({
-            method: 'masternode',
-            params: ['winner'],
-            callback: (err, winners) => {
-                if (err || !winners || !Array.isArray(winners) || winners.length === 0) {
-                    // No masternode info available, proceed without it
-                    callback(null, blockTemplate);
-                    return;
+                logger.debug(`Block template height=${blockTemplate.height} coinbasevalue=${blockTemplate.coinbasevalue} devalloc=${blockTemplate.devallocation || 0}`);
+                if (blockTemplate.masternode && typeof blockTemplate.masternode === 'object') {
+                    const mn = blockTemplate.masternode;
+                    logger.debug(`Masternode payment: total=${mn.amount || 0} to ${mn.payee || 'unknown'}` +
+                        (mn.operator_reward ? ` (operator=${mn.operator_reward})` : ''));
+                } else if (blockTemplate.masternode === 'no_valid_masternodes') {
+                    logger.debug('No valid masternodes available for payment');
                 }
-                
-                // Find winner for this block height
-                const height = blockTemplate.height;
-                const winner = winners.find(w => w.height === height);
-                
-                if (!winner || !winner.payoutAddress) {
-                    callback(null, blockTemplate);
-                    return;
-                }
-                
-                // We need to get the payout script for this address
-                // Calculate masternode payment (45% of block subsidy)
-                // Block subsidy calculation: starts at 5000, halves every 2,100,000 blocks
-                const halvings = Math.floor(height / 2100000);
-                const blockSubsidy = Math.floor(5000 * 100000000 / Math.pow(2, halvings)); // in satoshis
-                const mnPayment = Math.floor(blockSubsidy * 45 / 100); // 45% to masternode
-                
-                // Convert address to script using validateaddress
-                _._stratum.rpcClient.cmd({
-                    method: 'validateaddress',
-                    params: [winner.payoutAddress],
-                    callback: (err2, addrInfo) => {
-                        if (err2 || !addrInfo || !addrInfo.scriptPubKey) {
-                            callback(null, blockTemplate);
-                            return;
-                        }
-                        
-                        // Add masternode payment info to template
-                        blockTemplate.masternode = {
-                            proTxHash: winner.proTxHash,
-                            amount: mnPayment,
-                            script: addrInfo.scriptPubKey,
-                            payee: winner.payoutAddress
-                        };
-                        
-                        console.log(`[INFO] Masternode payment: ${mnPayment / 100000000} MYNTA to ${winner.payoutAddress}`);
-                        
-                        callback(null, blockTemplate);
-                    }
-                });
+
+                callback(null, blockTemplate);
             }
         });
     }

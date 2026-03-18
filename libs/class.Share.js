@@ -295,8 +295,12 @@ class Share {
             const logger = global.stratumLogger;
             if (logger) {
                 logger.info(`*** WINNING NONCE FOUND! Block ID: ${_._blockId} ***`);
-            } else {
-                console.log(`Winning nonce submitted: ${_._blockId}`);
+                logger.debug(`Verify inputs - headerHash: ${headerHashBuf.toString('hex')}`);
+                logger.debug(`Verify inputs - nonce: ${_._nonceBuf.toString('hex')}`);
+                logger.debug(`Verify inputs - mixHash: ${_._mixHashBuf.toString('hex')}`);
+                logger.debug(`Verify inputs - height: ${_._job.height}`);
+                logger.debug(`Verify output - hashOut: ${HASH_OUT_BUFFER.toString('hex')}`);
+                logger.debug(`Block hex first 240 chars: ${_._blockHex.substring(0, 240)}`);
             }
         }
 

@@ -476,6 +476,8 @@ class Stratum extends EventEmitter {
         const _ = this;
         const logger = getLogger();
 
+        logger.debug(`Submitting block hex (${share.blockHex.length / 2} bytes) for block ${share.blockId}`);
+
         _._rpcClient.cmd({
             method: 'submitblock',
             params: [share.blockHex],
@@ -484,13 +486,12 @@ class Stratum extends EventEmitter {
                     logger.error('Error submitting block to node:', err.message || err);
                     callback(err);
                 }
-                else if (result) {
-                    // Non-null result means rejection
+                else if (result && result !== true) {
                     logger.error('Node rejected block:', result);
                     callback(new Error(`Block rejected: ${result}`));
                 }
                 else {
-                    // null result means success
+                    logger.info('Block accepted by daemon (submitblock returned success)');
                     callback(null);
                 }
             }
@@ -512,12 +513,17 @@ class Stratum extends EventEmitter {
                         isAccepted: false
                     });
                 }
-                else {
-                    logger.debug('Block verified on chain');
+                else if (block && block.confirmations >= 0) {
+                    const coinbaseTxId = Array.isArray(block.tx) && block.tx.length > 0 ? block.tx[0] : null;
+                    logger.info(`Block verified on chain at height ${block.height}, coinbase txid: ${coinbaseTxId}`);
                     callback(null, {
                         isAccepted: true,
-                        block: block
+                        block: { txId: coinbaseTxId, height: block.height, hash: block.hash }
                     });
+                }
+                else {
+                    logger.warn('Block found but has negative confirmations (orphaned)');
+                    callback(null, { isAccepted: false });
                 }
             }
         });
